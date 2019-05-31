@@ -75,7 +75,6 @@ function launch () {
     defineReactiveSetter(this.$apollo, 'skipAllQueries', apollo.$skipAllQueries, apollo.$deep)
     defineReactiveSetter(this.$apollo, 'skipAllSubscriptions', apollo.$skipAllSubscriptions, apollo.$deep)
     defineReactiveSetter(this.$apollo, 'client', apollo.$client, apollo.$deep)
-    defineReactiveSetter(this.$apollo, 'loadingKey', apollo.$loadingKey, apollo.$deep)
     defineReactiveSetter(this.$apollo, 'error', apollo.$error, apollo.$deep)
     defineReactiveSetter(this.$apollo, 'watchLoading', apollo.$watchLoading, apollo.$deep)
 

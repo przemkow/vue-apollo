@@ -4,7 +4,6 @@ import { VUE_APOLLO_QUERY_KEYWORDS } from '../lib/consts'
 export default class SmartQuery extends SmartApollo {
   type = 'query'
   vueApolloSpecialKeys = VUE_APOLLO_QUERY_KEYWORDS
-  _loading = false
 
   constructor (vm, key, options, autostart = true) {
     // Simple query
@@ -62,24 +61,17 @@ export default class SmartQuery extends SmartApollo {
   }
 
   get loading () {
-    return this.vm.$data.$apolloData && this.vm.$data.$apolloData.queries[this.key] ? this.vm.$data.$apolloData.queries[this.key].loading : this._loading
+    return this.vm.$data.$apolloData.queries[this.key].loading;
   }
 
   set loading (value) {
-    if (this._loading !== value) {
-      this._loading = value
-      if (this.vm.$data.$apolloData && this.vm.$data.$apolloData.queries[this.key]) {
-        this.vm.$data.$apolloData.queries[this.key].loading = value
-        this.vm.$data.$apolloData.loading += value ? 1 : -1
-      }
-    }
+    this.vm.$data.$apolloData.queries[this.key].loading = value
+    this.vm.$data.$apolloData.loading += value ? 1 : -1
   }
 
   stop () {
     super.stop()
-
-    this.loadingDone()
-
+    this.loading = false;
     if (this.observer) {
       this.observer.stopPolling()
       this.observer = null
@@ -103,13 +95,11 @@ export default class SmartQuery extends SmartApollo {
 
     this.startQuerySubscription()
 
-    if (this.options.fetchPolicy !== 'no-cache') {
-      const currentResult = this.maySetLoading()
-
-      if (!currentResult.loading) {
-        this.nextResult(currentResult)
-      }
-    }
+    // TODO test optimistic UI updates.
+    // if (this.options.fetchPolicy !== 'no-cache') {
+      const currentResult = this.observer.currentResult()
+      this.nextResult(currentResult)
+    // }
 
     super.executeApollo(variables)
   }
@@ -124,28 +114,19 @@ export default class SmartQuery extends SmartApollo {
     })
   }
 
-  maySetLoading (force = false) {
-    const currentResult = this.observer.currentResult()
-    if (force || currentResult.loading) {
-      if (!this.loading) {
-        this.applyLoadingModifier(1)
-      }
-      this.loading = true
-    }
-    return currentResult
-  }
-
   nextResult (result) {
     super.nextResult(result)
 
     const { data, loading, error } = result
+
+    this.vm.$data.$apolloData.queries[this.key].loading = loading;
 
     if (error) {
       this.firstRunReject()
     }
 
     if (!loading) {
-      this.loadingDone()
+      this.firstRunResolve()
     }
 
     const hasResultCallback = typeof this.options.result === 'function'
@@ -176,7 +157,6 @@ export default class SmartQuery extends SmartApollo {
   catchError (error) {
     super.catchError(error)
     this.firstRunReject()
-    this.loadingDone(error)
     this.nextResult(this.observer.currentResult())
     // The observable closes the sub if an error occurs
     this.resubscribeToQuery()
@@ -190,47 +170,9 @@ export default class SmartQuery extends SmartApollo {
     Object.assign(this.observer, { lastError, lastResult })
   }
 
-  get loadingKey () {
-    return this.options.loadingKey || this.vm.$apollo.loadingKey
-  }
-
-  watchLoading (...args) {
-    return this.callHandlers([
-      this.options.watchLoading,
-      this.vm.$apollo.watchLoading,
-      this.vm.$apollo.provider.watchLoading,
-    ], ...args, this)
-  }
-
-  applyLoadingModifier (value) {
-    const loadingKey = this.loadingKey
-    if (loadingKey && typeof this.vm[loadingKey] === 'number') {
-      this.vm[loadingKey] += value
-    }
-
-    this.watchLoading(value === 1, value)
-  }
-
-  loadingDone (error = null) {
-    if (this.loading) {
-      this.applyLoadingModifier(-1)
-    }
-    this.loading = false
-
-    if (!error) {
-      this.firstRunResolve()
-    }
-  }
-
   fetchMore (...args) {
     if (this.observer) {
-      this.maySetLoading(true)
-      return this.observer.fetchMore(...args).then(result => {
-        if (!result.loading) {
-          this.loadingDone()
-        }
-        return result
-      })
+      return this.observer.fetchMore(...args)
     }
   }
 
@@ -243,34 +185,25 @@ export default class SmartQuery extends SmartApollo {
   }
 
   refetch (variables) {
-    variables && (this.options.variables = variables)
+    if (variables) {
+      this.options.variables = variables
+    }
     if (this.observer) {
-      const result = this.observer.refetch(variables).then((result) => {
-        if (!result.loading) {
-          this.loadingDone()
-        }
-        return result
-      })
-      this.maySetLoading()
-      return result
+      return this.observer.refetch(variables)
     }
   }
 
   setVariables (variables, tryFetch) {
     this.options.variables = variables
     if (this.observer) {
-      const result = this.observer.setVariables(variables, tryFetch)
-      this.maySetLoading()
-      return result
+      return this.observer.setVariables(variables, tryFetch)
     }
   }
 
   setOptions (options) {
     Object.assign(this.options, options)
     if (this.observer) {
-      const result = this.observer.setOptions(options)
-      this.maySetLoading()
-      return result
+      return this.observer.setOptions(options)
     }
   }
 

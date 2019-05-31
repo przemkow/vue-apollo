@@ -671,7 +671,7 @@
         } else if (error.networkError) {
           console.error("Error sending the ".concat(this.type, " '").concat(this.key, "'"), error.networkError);
         } else {
-          console.error("[vue-apollo] An error has occured for ".concat(this.type, " '").concat(this.key, "'"));
+          console.error("[vue-apollo] An error has occurred for ".concat(this.type, " '").concat(this.key, "'"));
 
           if (Array.isArray(error)) {
             var _console;
@@ -732,8 +732,9 @@
         options = {
           query: query
         };
-      } // Add reactive data related to the query
+      }
 
+      console.log('constructor', vm, key); // Add reactive data related to the query
 
       if (vm.$data.$apolloData && !vm.$data.$apolloData.queries[key]) {
         vm.$set(vm.$data.$apolloData.queries, key, {
@@ -746,8 +747,6 @@
       _defineProperty(_assertThisInitialized(_this), "type", 'query');
 
       _defineProperty(_assertThisInitialized(_this), "vueApolloSpecialKeys", VUE_APOLLO_QUERY_KEYWORDS);
-
-      _defineProperty(_assertThisInitialized(_this), "_loading", false);
 
       if (vm.$isServer) {
         _this.firstRun = new Promise(function (resolve, reject) {
@@ -794,7 +793,7 @@
       value: function stop() {
         _get(_getPrototypeOf(SmartQuery.prototype), "stop", this).call(this);
 
-        this.loadingDone();
+        this.loading = false;
 
         if (this.observer) {
           this.observer.stopPolling();
@@ -805,6 +804,7 @@
       key: "executeApollo",
       value: function executeApollo(variables) {
         var variablesJson = JSON.stringify(variables);
+        console.log('execute', variables);
 
         if (this.sub) {
           if (variablesJson === this.previousVariablesJson) {
@@ -817,15 +817,11 @@
         this.previousVariablesJson = variablesJson; // Create observer
 
         this.observer = this.vm.$apollo.watchQuery(this.generateApolloOptions(variables));
-        this.startQuerySubscription();
+        this.startQuerySubscription(); // TODO test optimistic UI updates.
+        // if (this.options.fetchPolicy !== 'no-cache') {
 
-        if (this.options.fetchPolicy !== 'no-cache') {
-          var currentResult = this.maySetLoading();
-
-          if (!currentResult.loading) {
-            this.nextResult(currentResult);
-          }
-        }
+        var currentResult = this.observer.currentResult();
+        this.nextResult(currentResult); // }
 
         _get(_getPrototypeOf(SmartQuery.prototype), "executeApollo", this).call(this, variables);
       }
@@ -840,22 +836,6 @@
         });
       }
     }, {
-      key: "maySetLoading",
-      value: function maySetLoading() {
-        var force = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : false;
-        var currentResult = this.observer.currentResult();
-
-        if (force || currentResult.loading) {
-          if (!this.loading) {
-            this.applyLoadingModifier(1);
-          }
-
-          this.loading = true;
-        }
-
-        return currentResult;
-      }
-    }, {
       key: "nextResult",
       value: function nextResult(result) {
         _get(_getPrototypeOf(SmartQuery.prototype), "nextResult", this).call(this, result);
@@ -863,13 +843,14 @@
         var data = result.data,
             loading = result.loading,
             error = result.error;
+        this.vm.$data.$apolloData.queries[this.key].loading = loading;
 
         if (error) {
           this.firstRunReject();
         }
 
         if (!loading) {
-          this.loadingDone();
+          this.firstRunResolve();
         }
 
         var hasResultCallback = typeof this.options.result === 'function';
@@ -901,7 +882,6 @@
         _get(_getPrototypeOf(SmartQuery.prototype), "catchError", this).call(this, error);
 
         this.firstRunReject();
-        this.loadingDone(error);
         this.nextResult(this.observer.currentResult()); // The observable closes the sub if an error occurs
 
         this.resubscribeToQuery();
@@ -919,56 +899,12 @@
         });
       }
     }, {
-      key: "watchLoading",
-      value: function watchLoading() {
-        for (var _len = arguments.length, args = new Array(_len), _key = 0; _key < _len; _key++) {
-          args[_key] = arguments[_key];
-        }
-
-        return this.callHandlers.apply(this, [[this.options.watchLoading, this.vm.$apollo.watchLoading, this.vm.$apollo.provider.watchLoading]].concat(args, [this]));
-      }
-    }, {
-      key: "applyLoadingModifier",
-      value: function applyLoadingModifier(value) {
-        var loadingKey = this.loadingKey;
-
-        if (loadingKey && typeof this.vm[loadingKey] === 'number') {
-          this.vm[loadingKey] += value;
-        }
-
-        this.watchLoading(value === 1, value);
-      }
-    }, {
-      key: "loadingDone",
-      value: function loadingDone() {
-        var error = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : null;
-
-        if (this.loading) {
-          this.applyLoadingModifier(-1);
-        }
-
-        this.loading = false;
-
-        if (!error) {
-          this.firstRunResolve();
-        }
-      }
-    }, {
       key: "fetchMore",
       value: function fetchMore() {
-        var _this2 = this;
-
         if (this.observer) {
           var _this$observer;
 
-          this.maySetLoading(true);
-          return (_this$observer = this.observer).fetchMore.apply(_this$observer, arguments).then(function (result) {
-            if (!result.loading) {
-              _this2.loadingDone();
-            }
-
-            return result;
-          });
+          return (_this$observer = this.observer).fetchMore.apply(_this$observer, arguments);
         }
       }
     }, {
@@ -985,20 +921,12 @@
     }, {
       key: "refetch",
       value: function refetch(variables) {
-        var _this3 = this;
-
-        variables && (this.options.variables = variables);
+        if (variables) {
+          this.options.variables = variables;
+        }
 
         if (this.observer) {
-          var result = this.observer.refetch(variables).then(function (result) {
-            if (!result.loading) {
-              _this3.loadingDone();
-            }
-
-            return result;
-          });
-          this.maySetLoading();
-          return result;
+          return this.observer.refetch(variables);
         }
       }
     }, {
@@ -1007,9 +935,7 @@
         this.options.variables = variables;
 
         if (this.observer) {
-          var result = this.observer.setVariables(variables, tryFetch);
-          this.maySetLoading();
-          return result;
+          return this.observer.setVariables(variables, tryFetch);
         }
       }
     }, {
@@ -1018,9 +944,7 @@
         Object.assign(this.options, options);
 
         if (this.observer) {
-          var result = this.observer.setOptions(options);
-          this.maySetLoading();
-          return result;
+          return this.observer.setOptions(options);
         }
       }
     }, {
@@ -1078,22 +1002,11 @@
     }, {
       key: "loading",
       get: function get$$1() {
-        return this.vm.$data.$apolloData && this.vm.$data.$apolloData.queries[this.key] ? this.vm.$data.$apolloData.queries[this.key].loading : this._loading;
+        return this.vm.$data.$apolloData.queries[this.key].loading;
       },
       set: function set(value) {
-        if (this._loading !== value) {
-          this._loading = value;
-
-          if (this.vm.$data.$apolloData && this.vm.$data.$apolloData.queries[this.key]) {
-            this.vm.$data.$apolloData.queries[this.key].loading = value;
-            this.vm.$data.$apolloData.loading += value ? 1 : -1;
-          }
-        }
-      }
-    }, {
-      key: "loadingKey",
-      get: function get$$1() {
-        return this.options.loadingKey || this.vm.$apollo.loadingKey;
+        this.vm.$data.$apolloData.queries[this.key].loading = value;
+        this.vm.$data.$apolloData.loading += value ? 1 : -1;
       }
     }]);
 
@@ -1196,7 +1109,6 @@
       this.queries = {};
       this.subscriptions = {};
       this.client = undefined;
-      this.loadingKey = undefined;
       this.error = undefined;
     }
 
@@ -4710,7 +4622,7 @@
             _result = Object.assign({}, _result);
 
             if (errors && errors.length) {
-              error = new Error("Apollo errors occured (".concat(errors.length, ")"));
+              error = new Error("Apollo errors occurred (".concat(errors.length, ")"));
               error.graphQLErrors = errors;
             }
 
@@ -5007,7 +4919,6 @@
       defineReactiveSetter(this.$apollo, 'skipAllQueries', apollo.$skipAllQueries, apollo.$deep);
       defineReactiveSetter(this.$apollo, 'skipAllSubscriptions', apollo.$skipAllSubscriptions, apollo.$deep);
       defineReactiveSetter(this.$apollo, 'client', apollo.$client, apollo.$deep);
-      defineReactiveSetter(this.$apollo, 'loadingKey', apollo.$loadingKey, apollo.$deep);
       defineReactiveSetter(this.$apollo, 'error', apollo.$error, apollo.$deep);
       defineReactiveSetter(this.$apollo, 'watchLoading', apollo.$watchLoading, apollo.$deep); // Apollo Data
 
